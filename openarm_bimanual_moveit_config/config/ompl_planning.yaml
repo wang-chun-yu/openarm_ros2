@@ -1,0 +1,31 @@
+planning_plugin: ompl_interface/OMPLPlanner
+start_state_max_bounds_error: 0.1
+jiggle_fraction: 0.05
+request_adapters: >-
+    default_planner_request_adapters/AddTimeOptimalParameterization
+    default_planner_request_adapters/ResolveConstraintFrames
+    default_planner_request_adapters/FixWorkspaceBounds
+    default_planner_request_adapters/FixStartStateBounds
+    default_planner_request_adapters/FixStartStateCollision
+    default_planner_request_adapters/FixStartStatePathConstraints
+
+# Arm groups defined in openarm_bimanual.srdf
+left_arm:
+  planner_configs:
+    - RRTConnect
+    - RRT
+    - RRTstar
+    - PRM
+    - PRMstar
+  projection_evaluator: joints(openarm_left_joint1,openarm_left_joint2)
+  longest_valid_segment_fraction: 0.005
+
+right_arm:
+  planner_configs:
+    - RRTConnect
+    - RRT
+    - RRTstar
+    - PRM
+    - PRMstar
+  projection_evaluator: joints(openarm_right_joint1,openarm_right_joint2)
+  longest_valid_segment_fraction: 0.005
