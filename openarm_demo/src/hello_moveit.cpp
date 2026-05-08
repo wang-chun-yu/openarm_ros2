@@ -25,14 +25,27 @@ int main(int argc, char * argv[])
   // Create the MoveIt MoveGroup Interface
   using moveit::planning_interface::MoveGroupInterface;
   auto move_group_interface = MoveGroupInterface(node, "left_arm");
-  RCLCPP_INFO(logger, "Planning frame: %s", move_group_interface.getPlanningFrame().c_str());
+  // 
+  auto const planning_frame = move_group_interface.getPlanningFrame();
+  RCLCPP_INFO(logger, "Planning frame: %s", planning_frame.c_str());
   RCLCPP_INFO(
     logger, "Pose reference frame: %s", move_group_interface.getPoseReferenceFrame().c_str());
+  move_group_interface.setPoseReferenceFrame(planning_frame);
   move_group_interface.startStateMonitor(2.0);
+
+  auto ee_link = move_group_interface.getEndEffectorLink();
+  if (ee_link.empty()) {
+    ee_link = "openarm_left_hand_tcp";
+    if (!move_group_interface.getRobotModel()->hasLinkModel(ee_link)) {
+      ee_link = "openarm_left_hand";
+    }
+    move_group_interface.setEndEffectorLink(ee_link);
+  }
+  RCLCPP_INFO(logger, "Using end effector link: %s", ee_link.c_str());
 
   // Construct and initialize MoveItVisualTools
   auto moveit_visual_tools = moveit_visual_tools::MoveItVisualTools{
-      node, "openarm_left_link0", rviz_visual_tools::RVIZ_MARKER_TOPIC,
+      node, planning_frame, rviz_visual_tools::RVIZ_MARKER_TOPIC,
       move_group_interface.getRobotModel()};
   moveit_visual_tools.deleteAllMarkers();
   moveit_visual_tools.loadRemoteControl();
@@ -64,22 +77,18 @@ int main(int argc, char * argv[])
   auto const draw_trajectory_tool_path =
       [&moveit_visual_tools,
       robot_model = move_group_interface.getRobotModel(),
-      jmg = move_group_interface.getRobotModel()->getJointModelGroup(
-          "left_arm")](auto const trajectory) {
-        // const moveit::core::LinkModel* ee_link =
-        //     robot_model->getLinkModel("openarm_left_hand_tcp");
-        // if (!ee_link) {
-        //   ee_link = robot_model->getLinkModel("openarm_left_hand");
-        // }
-        // if (ee_link) {
-        //   moveit_visual_tools.publishTrajectoryLine(trajectory, ee_link, jmg);
-        
+      jmg = move_group_interface.getRobotModel()->getJointModelGroup("left_arm"),
+      ee_link](auto const trajectory) {
+        const moveit::core::LinkModel* ee_link_model = robot_model->getLinkModel(ee_link);
+        if (ee_link_model) {
+          moveit_visual_tools.publishTrajectoryLine(trajectory, ee_link_model, jmg);
+        } else {
           moveit_visual_tools.publishTrajectoryLine(trajectory, jmg);
-        
+        }
       };
 
   // Use current pose as a seed, then apply a small reachable offset
-  auto current_pose_stamped = move_group_interface.getCurrentPose();
+  auto current_pose_stamped = move_group_interface.getCurrentPose(ee_link);
   // 打印当前位置
   RCLCPP_INFO(
     logger,
@@ -94,8 +103,9 @@ int main(int argc, char * argv[])
     current_pose_stamped.pose.orientation.w);
   auto target_pose = current_pose_stamped.pose;
   
-  target_pose.position.z += 0.2;  // small upward offset in planning frame
-  move_group_interface.setPoseTarget(target_pose);
+  target_pose.position.z += 0.05;  // small upward offset in planning frame
+  move_group_interface.setStartStateToCurrentState();
+  move_group_interface.setPoseTarget(target_pose, ee_link);
 
   // Create a plan to that target pose
   prompt("Press 'Next' in the RvizVisualToolsGui window to plan");
@@ -115,6 +125,7 @@ int main(int argc, char * argv[])
     draw_title("Executing");
     moveit_visual_tools.trigger();
     move_group_interface.execute(plan);
+    move_group_interface.clearPoseTargets();
   } else {
     draw_title("Planning Failed!");
     moveit_visual_tools.trigger();
